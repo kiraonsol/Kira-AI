@@ -32,10 +32,9 @@
             min-height: 100vh;
             line-height: 1.6;
             overflow-x: hidden;
-            background: 
-                linear-gradient(45deg, rgba(182, 87, 255, 0.2), rgba(77, 127, 255, 0.2)), /* Neon gradient overlay */
-                url('https://imgur.com/a/iOy5HSw') no-repeat center center fixed; /* Replace with your image URL */
-            background-size: cover;
+            background-image: 
+                radial-gradient(circle at 20% 20%, rgba(182, 87, 255, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(77, 127, 255, 0.15) 0%, transparent 50%);
         }
 
         .nav {
@@ -182,15 +181,92 @@
             box-shadow: 0 0 30px rgba(182, 87, 255, 0.3);
         }
 
+        #chatbot {
+            display: none;
+        }
+
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: 500px;
+            gap: 20px;
+        }
+
+        .chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            padding: 12px 20px;
+            border-radius: 15px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+
+        .message.bot {
+            background: rgba(182, 87, 255, 0.1);
+            border: 1px solid rgba(182, 87, 255, 0.2);
+            align-self: flex-start;
+        }
+
+        .message.user {
+            background: rgba(77, 127, 255, 0.1);
+            border: 1px solid rgba(77, 127, 255, 0.2);
+            align-self: flex-end;
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input input {
+            flex-grow: 1;
+            margin: 0;
+        }
+
+        .chat-input button {
+            margin: 0;
+            padding: 15px 25px;
+        }
+
+        #result {
+            margin: 20px auto;
+            padding: 20px;
+            max-width: 400px;
+            border-radius: 12px;
+            font-family: monospace;
+        }
+
+        .error { 
+            background: rgba(255, 87, 87, 0.1);
+            border: 1px solid #ff5757;
+        }
+
+        .success { 
+            background: rgba(182, 87, 255, 0.1);
+            border: 1px solid var(--neon-purple);
+        }
+
+        .loading {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
         @media (max-width: 768px) {
             .nav-links {
                 gap: 15px;
             }
-
+            
             .title {
                 font-size: 2em;
             }
-
+            
             .card {
                 padding: 20px;
             }
@@ -214,11 +290,162 @@
             <div class="card" id="wallet-checker">
                 <h1 class="title">Meet Kira</h1>
                 <p class="subtitle">The AI designed to tempt and corrupt your thoughts</p>
+                
                 <input type="text" id="walletInput" placeholder="Enter Solana wallet address" />
                 <button onclick="checkWallet()" id="checkButton">Check Wallet</button>
                 <div id="result"></div>
             </div>
+
+            <div class="card" id="chatbot">
+                <div class="chat-container">
+                    <div class="chat-header">
+                        <h2 class="title">Chat with Kira</h2>
+                    </div>
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="message bot">
+                            Hello mortal, I am Kira. Ready to be corrupted?
+                        </div>
+                    </div>
+                    <div class="chat-input">
+                        <input type="text" id="messageInput" placeholder="Type your message..." />
+                        <button onclick="sendMessage()">Send</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </section>
+
+    <script>
+        const MAINNET_RPC = "https://solana-mainnet.g.alchemy.com/v2/1FrRotnfIMWY_QNY9gN3F-ttvwFPlu5e";
+        const KIRA_TOKEN_MINT = "GyCNKRGU5t7mvVQVyrtP1hPwdq1V29GAP54HvwhVpump";
+
+        async function makeRPCRequest(method, params = []) {
+            const response = await fetch(MAINNET_RPC, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: method,
+                    params: params
+                })
+            });
+
+            const data = await response.json();
+            if (data.error) {
+                throw new Error(data.error.message);
+            }
+            return data.result;
+        }
+
+        async function getTokenAccounts(walletAddress) {
+            const response = await makeRPCRequest('getTokenAccountsByOwner', [
+                walletAddress,
+                {
+                    mint: KIRA_TOKEN_MINT
+                },
+                {
+                    encoding: 'jsonParsed'
+                }
+            ]);
+            return response;
+        }
+
+        function isValidSolanaAddress(address) {
+            return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+        }
+
+        function formatTokenAmount(amount, decimals) {
+            return (amount / (10 ** decimals)).toFixed(2);
+        }
+
+        async function checkWallet() {
+            const walletAddress = document.getElementById('walletInput').value.trim();
+            const resultDiv = document.getElementById('result');
+            const checkButton = document.getElementById('checkButton');
+            
+            resultDiv.className = '';
+            checkButton.disabled = true;
+
+            if (!isValidSolanaAddress(walletAddress)) {
+                resultDiv.className = 'error';
+                resultDiv.textContent = 'Invalid Solana wallet address format';
+                checkButton.disabled = false;
+                return;
+            }
+
+            try {
+                resultDiv.className = 'loading';
+                resultDiv.textContent = 'Checking wallet for Kira tokens...';
+
+                const tokenAccounts = await getTokenAccounts(walletAddress);
+
+                let kiraBalance = 0;
+                if (tokenAccounts.value.length > 0) {
+                    const tokenAccount = tokenAccounts.value[0].account.data.parsed.info;
+                    kiraBalance = formatTokenAmount(tokenAccount.tokenAmount.amount, tokenAccount.tokenAmount.decimals);
+                }
+
+                if (kiraBalance > 0) {
+                    resultDiv.className = 'success';
+                    resultDiv.textContent = `Found ${kiraBalance} KIRA tokens! Access granted.`;
+                    setTimeout(showChatbot, 1500);
+                } else {
+                    resultDiv.className = 'error';
+                    resultDiv.textContent = 'No Kira tokens found in this wallet.';
+                }
+
+            } catch (error) {
+                resultDiv.className = 'error';
+                resultDiv.textContent = `Error checking wallet: ${error.message}`;
+            } finally {
+                checkButton.disabled = false;
+            }
+        }
+
+        function showChatbot() {
+            const walletChecker = document.getElementById('wallet-checker');
+            const chatbot = document.getElementById('chatbot');
+            
+            walletChecker.style.display = 'none';
+            chatbot.style.display = 'block';
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value.trim();
+            
+            if (message) {
+                const chatMessages = document.getElementById('chat-messages');
+                
+                // Add user message
+                const userDiv = document.createElement('div');
+                userDiv.className = 'message user';
+                userDiv.textContent = message;
+                chatMessages.appendChild(userDiv);
+                
+                // Clear input
+                messageInput.value = '';
+                
+                // Scroll to bottom
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                
+                // Simulate bot response
+                setTimeout(() => {
+                    const botDiv = document.createElement('div');
+                    botDiv.className = 'message bot';
+                    botDiv.textContent = "I see your thoughts are already corrupted. Good... good...";
+                    chatMessages.appendChild(botDiv);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                }, 1000);
+            }
+        }
+
+        document.getElementById('messageInput')?.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
 </body>
 </html>
